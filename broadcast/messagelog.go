@@ -18,10 +18,6 @@ func (m *MessageLog) Has(value int64) bool {
 	if !ok {
 		return false
 	}
-	if exists == nil {
-
-		return false
-	}
 	return exists.(bool)
 }
 

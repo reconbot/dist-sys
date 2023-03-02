@@ -3,12 +3,10 @@ package main
 import (
 	"reflect"
 	"testing"
-
-	"./messagelog"
 )
 
 func TestMapWrapper(t *testing.T) {
-	message_log := messagelog.MessageLog{}
+	message_log := MessageLog{}
 
 	// Set a value and check that it's retrieved correctly
 	message_log.Add(42)

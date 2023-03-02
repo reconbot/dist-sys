@@ -5,8 +5,6 @@ import (
 	"log"
 	"time"
 
-	"./messagelog"
-
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
@@ -20,10 +18,10 @@ type SyncMessage struct {
 }
 
 type BroadcastMessage struct {
-	Message int64 `json:"messages"`
+	Message int64 `json:"message"`
 }
 
-func syncMessages(node *maelstrom.Node, message_log *messagelog.MessageLog) {
+func syncMessages(node *maelstrom.Node, message_log *MessageLog) {
 	messages := message_log.Keys()
 	if len(messages) == 0 {
 		return
@@ -44,7 +42,7 @@ func syncMessages(node *maelstrom.Node, message_log *messagelog.MessageLog) {
 
 func main() {
 	node := maelstrom.NewNode()
-	message_log := &messagelog.MessageLog{}
+	message_log := &MessageLog{}
 
 	go func() {
 		for {
@@ -58,6 +56,7 @@ func main() {
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
 		}
+		log.Printf("got broadcast %v", body)
 
 		message := body.Message
 		message_log.Add(message)
