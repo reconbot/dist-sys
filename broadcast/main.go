@@ -46,7 +46,7 @@ func main() {
 
 	go func() {
 		for {
-			time.Sleep(1000 * time.Millisecond)
+			time.Sleep(15 * 1000 * time.Millisecond)
 			syncMessages(node, message_log)
 		}
 	}()
