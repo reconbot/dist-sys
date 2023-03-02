@@ -10,61 +10,91 @@ import (
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
-func main() {
-	message_map := map[int64]bool{}
-	message_mutex := sync.Mutex{}
-	node := maelstrom.NewNode()
+type Logs struct {
+	node_name   string
+	message_map map[int64]bool
+}
 
-	allMessages := func() []int64 {
-		messages := []int64{}
-		message_mutex.Lock()
-		for key := range message_map {
-			messages = append(messages, key)
+type MessageLog struct {
+	message_map sync.Map
+}
+
+func (m *MessageLog) Add(value int64) {
+	m.message_map.Store(value, true)
+}
+
+func (m *MessageLog) Has(value int64) bool {
+	exists, ok := m.message_map.Load(value)
+	if !ok {
+		return false
+	}
+	if exists == nil {
+		return false
+	}
+	return exists.(bool)
+}
+
+func (m *MessageLog) Keys() []int64 {
+	messages := []int64{}
+	m.message_map.Range(func(key any, value any) bool {
+		if value.(bool) {
+			messages = append(messages, key.(int64))
 		}
-		message_mutex.Unlock()
-		sort.Slice(messages, func(i, j int) bool {
-			return messages[i] < messages[j]
+		return true
+	})
+	sort.Slice(messages, func(i, j int) bool {
+		return messages[i] < messages[j]
+	})
+	return messages
+}
+
+type SyncMessage struct {
+	Messages []int64 `json:"messages"`
+}
+
+type BroadcastMessage struct {
+	Message int64 `json:"messages"`
+}
+
+func syncMessages(node *maelstrom.Node, message_log *MessageLog) {
+	messages := message_log.Keys()
+	if len(messages) == 0 {
+		return
+	}
+	for _, node_id := range node.NodeIDs() {
+		if node_id == node.ID() {
+			continue
+		}
+		err := node.Send(node_id, map[string]any{
+			"type":     "sync",
+			"messages": messages,
 		})
-		return messages
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
+}
 
-	syncMessages := func() {
-		messages := allMessages()
-		if len(messages) == 0 {
-			return
-		}
-		for _, node_id := range node.NodeIDs() {
-			if node_id == node.ID() {
-				continue
-			}
-			err := node.Send(node_id, map[string]any{
-				"type":     "sync",
-				"messages": messages,
-			})
-			if err != nil {
-				log.Fatal(err)
-			}
-		}
-	}
+func main() {
+	node := maelstrom.NewNode()
+	message_log := &MessageLog{}
 
 	go func() {
 		for {
 			time.Sleep(500 * time.Millisecond)
-			syncMessages()
+			syncMessages(node, message_log)
 		}
 	}()
 
 	node.Handle("broadcast", func(msg maelstrom.Message) error {
-		var body map[string]any
+		var body BroadcastMessage
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
 		}
 
-		message := int64(body["message"].(float64))
-		message_mutex.Lock()
-		message_map[message] = true
-		message_mutex.Unlock()
-		syncMessages()
+		message := body.Message
+		message_log.Add(message)
+		syncMessages(node, message_log)
 
 		response := map[string]any{
 			"type": "broadcast_ok",
@@ -73,24 +103,22 @@ func main() {
 	})
 
 	node.Handle("sync", func(msg maelstrom.Message) error {
-		var body map[string]any
+		var body SyncMessage
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
 		}
 
-		messages := body["messages"].([]interface{})
-		message_mutex.Lock()
+		messages := body.Messages
 		for _, message := range messages {
-			message_map[int64(message.(float64))] = true
+			message_log.Add(message)
 		}
-		message_mutex.Unlock()
 		return nil
 	})
 
 	node.Handle("read", func(msg maelstrom.Message) error {
 		body := map[string]any{
 			"type":     "read_ok",
-			"messages": allMessages(),
+			"messages": message_log.Keys(),
 		}
 
 		return node.Reply(msg, body)
